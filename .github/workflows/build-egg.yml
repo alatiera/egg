@@ -51,8 +51,14 @@ jobs:
       # - cache-buildtrees: never -> save disk (we only need final artifacts)
       #
       - name: Generate BuildStream CI config
+        env:
+          CASD_CLIENT_CERT: ${{ vars.CASD_CLIENT_CERT }}
+          CASD_CLIENT_KEY: ${{ secrets.CASD_CLIENT_KEY }}
         run: |
           mkdir -p logs
+          # Setup certificate for pushing to the cache
+          echo "$CASD_CLIENT_CERT" > client.crt
+          echo "$CASD_CLIENT_KEY" > client.key
           cat > buildstream-ci.conf <<'BSTCONF'
           scheduler:
             fetchers: 32
@@ -63,79 +69,97 @@ jobs:
             message-format: '[%{wallclock}][%{elapsed}][%{key}][%{element}] %{action} %{message}'
             error-lines: 80
 
-          cachedir: /tmp/cache
+          cachedir: /srv/cache
+          logdir: /srv/logs
 
           build:
             retry-failed: True
 
           artifacts:
             servers:
-            - url: https://cache.projectbluefin.io:11004
-              # push: true
+            - url: https://cache.projectbluefin.io:11002
+              push: true
               connection-config:
                 keepalive-time: 60
                 retry-limit: 5
                 retry-delay: 1000
                 request-timeout: 180
               auth:
-                access-token: /src/bluefin.token
+                client-key: /src/client.key
+                client-cert: /src/client.crt
 
           source-caches:
             servers:
-            - url: https://cache.projectbluefin.io:11004
-              # push: true
+            - url: https://cache.projectbluefin.io:11002
+              push: true
               connection-config:
                 keepalive-time: 60
                 retry-limit: 5
                 retry-delay: 1000
                 request-timeout: 180
               auth:
-                access-token: /src/bluefin.token
+                client-key: /src/client.key
+                client-cert: /src/client.crt
+
+          cache:
+            storage-service:
+              url: https://cache.projectbluefin.io:11002
+              connection-config:
+                keepalive-time: 60
+                retry-limit: 5
+                retry-delay: 1000
+                request-timeout: 180
+              auth:
+                client-key: /src/client.key
+                client-cert: /src/client.crt
 
           remote-execution:
-            storage-service:
-              url: https://cache.projectbluefin.io:11004
-              connection-config:
-                keepalive-time: 60
-                retry-limit: 5
-                retry-delay: 1000
-                request-timeout: 180
-              auth:
-                access-token: /src/bluefin.token
             execution-service:
-              url: https://cache.projectbluefin.io:11004
+              url: https://cache.projectbluefin.io:11002
               connection-config:
                 keepalive-time: 60
                 retry-limit: 5
                 retry-delay: 1000
                 request-timeout: 180
               auth:
-                access-token: /src/bluefin.token
+                client-key: /src/client.key
+                client-cert: /src/client.crt
             action-cache-service:
-              url: https://cache.projectbluefin.io:11004
+              url: https://cache.projectbluefin.io:11002
               connection-config:
                 keepalive-time: 60
                 retry-limit: 5
                 retry-delay: 1000
                 request-timeout: 180
               auth:
-                access-token: /src/bluefin.token
+                client-key: /src/client.key
+                client-cert: /src/client.crt
           BSTCONF
 
           echo "=== BuildStream CI config ==="
+
+          if [[ -z "$CASD_CLIENT_CERT" ]]; then
+            echo "Variables empty"
+            exit 1
+          fi
+          
+          if [[ -z "$CASD_CLIENT_ΚΕΥ" ]]; then
+            echo "KEY is empty"
+            exit 1
+          fi
+
           cat buildstream-ci.conf
 
       # ── BuildStream build ─────────────────────────────────────────────
       # Uses the Justfile's `bst` wrapper to run BuildStream inside the
       # bst2 container. CI-specific flags (--no-interactive, --config)
       # are injected via BST_FLAGS env var.
-      # Additional --log-file flag is passed directly (build-specific).
 
       - name: Build OCI image with BuildStream
         env:
           BST_FLAGS: --no-interactive --config /src/buildstream-ci.conf
         run: |
-          just bst --log-file /src/logs/build.log build oci/bluefin.bst
+          just bst build oci/bluefin.bst
         timeout-minutes: 120
 
       # ── Export OCI image ──────────────────────────────────────────────
