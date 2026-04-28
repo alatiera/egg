@@ -108,6 +108,7 @@ jobs:
           logdir: /src/logs
 
           build:
+            max-jobs: 32
             retry-failed: True
 
           BSTCONF
